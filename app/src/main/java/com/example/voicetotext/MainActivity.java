@@ -2,23 +2,34 @@ package com.example.voicetotext;
 
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.speech.RecognizerIntent;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.Toast;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 
-public class MainActivity extends AppCompatActivity {
-    // リクエストを識別するための変数宣言。適当な数字でよい
+public class MainActivity extends AppCompatActivity implements View.OnClickListener, TextToSpeech.OnInitListener {
+    private String tmpRecode = "";
+    // リクエストを識別するための変数宣言。適当な数字でよい for VTT
     private static final int REQUEST_CODE = 0;
+    // for TTS
+    private TextToSpeech tts;
+    private static final String TAG = "Test the TTS";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -35,6 +46,151 @@ public class MainActivity extends AppCompatActivity {
                         .setAction("Action", null).show();
             }
         });
+
+        // TTS オブジェクト生成
+        tts = new TextToSpeech(this, this);
+
+        Button ttsButton = (Button)findViewById(R.id.ttsButton);
+        ttsButton.setOnClickListener(this);
+    }
+
+    @Override
+    public void onInit(int status) {
+        // TTS初期化
+        if (TextToSpeech.SUCCESS == status) {
+            Log.d(TAG, "initialized");
+        } else {
+            Log.e(TAG, "failed to initialize");
+        }
+    }
+
+    @Override
+    public void onClick(View v) {
+        speechText();
+    }
+
+    private void shutDown(){
+        if (null != tts) {
+            // to release the resource of TextToSpeech
+            tts.shutdown();
+        }
+    }
+
+    private void speechText() {
+        EditText editor = (EditText)findViewById(R.id.editText);
+        editor.selectAll();
+
+        String string = "";
+        if (tmpRecode.equals("")){
+            // EditTextからテキストを取得
+            string = editor.getText().toString();
+        }else {
+            String tmpString = "";
+
+            // VTTで得た文字列を1文字ずつ切り分けてセミコロンまで判定
+            for (int i = 0; i < tmpRecode.length(); i++) {
+                tmpString = String.valueOf(tmpRecode.charAt(i));
+
+                if (tmpString.equals(";")) {
+                    Log.d(TAG, string);
+                    break;
+                } else {
+                    string += tmpString;
+                }
+            }
+//            string = tmpRecode;
+        }
+
+
+        if (0 < string.length()) {
+            if (tts.isSpeaking()) {
+                // 読み上げ中なら止める
+                tts.stop();
+                return;
+            }
+            setSpeechRate(1.0f);
+            setSpeechPitch(1.0f);
+
+            // tts.speak(text, TextToSpeech.QUEUE_FLUSH, null) に
+            // KEY_PARAM_UTTERANCE_ID を HasMap で設定
+            HashMap<String, String> map = new HashMap<String, String>();
+            map.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID,"messageID");
+
+            // 読み上げ開始
+            tts.speak(string, TextToSpeech.QUEUE_FLUSH, map);
+            setTtsListener();
+
+        }
+    }
+
+    // 読み上げのスピード
+    private void setSpeechRate(float rate){
+        if (null != tts) {
+            tts.setSpeechRate(rate);
+        }
+    }
+
+    // 読み上げのピッチ
+    private void setSpeechPitch(float pitch){
+        if (null != tts) {
+            tts.setPitch(pitch);
+        }
+    }
+
+    // 読み上げの始まりと終わりを取得
+    private void setTtsListener(){
+        // android version more than 15th
+        if (Build.VERSION.SDK_INT >= 15)
+        {
+            int listenerResult = tts.setOnUtteranceProgressListener(new UtteranceProgressListener()
+            {
+                @Override
+                public void onDone(String utteranceId)
+                {
+                    Log.d(TAG,"progress on Done " + utteranceId);
+                }
+
+                @Override
+                public void onError(String utteranceId)
+                {
+                    Log.d(TAG,"progress on Error " + utteranceId);
+                }
+
+                @Override
+                public void onStart(String utteranceId)
+                {
+                    Log.d(TAG,"progress on Start " + utteranceId);
+                }
+
+            });
+            if (listenerResult != TextToSpeech.SUCCESS)
+            {
+                Log.e(TAG, "failed to add utterance progress listener");
+            }
+        }
+        else
+        {
+            // less than 15th
+            int listenerResult = tts.setOnUtteranceCompletedListener(new TextToSpeech.OnUtteranceCompletedListener()
+            {
+                @Override
+                public void onUtteranceCompleted(String utteranceId)
+                {
+                    Log.d(TAG,"progress on Completed " + utteranceId);
+                }
+            });
+
+            if (listenerResult != TextToSpeech.SUCCESS)
+            {
+                Log.e(TAG, "failed to add utterance completed listener");
+            }
+        }
+
+    }
+
+    protected void onDestroy() {
+        super.onDestroy();
+        shutDown();
     }
 
     @Override
@@ -80,6 +236,12 @@ public class MainActivity extends AppCompatActivity {
             }
             // トーストを使って結果表示
             Toast.makeText(this, resultsString, Toast.LENGTH_LONG).show();
+
+            // VTTとTTSの連携
+            Log.d(TAG, "連携はいりまっっっっっっっ");
+            Log.d(TAG, resultsString);
+            tmpRecode = resultsString;
+            speechText();
         }
 
         super.onActivityResult(requestCode, resultCode, data);
